@@ -1,5 +1,7 @@
 """All source connectors."""
 
+from airweave.platform.sources.local_drive import LocalDriveSource
+
 from .airtable import AirtableSource
 from .apollo import ApolloSource
 from .asana import AsanaSource
@@ -104,6 +106,7 @@ ALL_SOURCES: list[type] = [
     IntercomSource,
     JiraSource,
     LinearSource,
+    LocalDriveSource,
     MondaySource,
     NotionSource,
     OneDriveSource,

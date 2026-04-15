@@ -1257,3 +1257,42 @@ class EnronConfig(SourceConfig):
         ),
         min_length=1,
     )
+
+
+# Local Drive
+class LocalDriveConfig(SourceConfig):
+    """Runtime config for the Local Drive connector."""
+
+    root_path: str = Field(
+        ...,
+        description="Absolute path to the root directory to index. Must exist and be a directory.",
+    )
+    extensions: list[str] = Field(
+        default_factory=list,
+        description="Lowercase file extensions to include WITH dot (e.g. ['.pdf']). Empty = all.",
+    )
+    max_file_size_mb: float = Field(
+        0.0,
+        ge=0.0,
+        description="Max file size in MB. Files larger than this are skipped. 0 = no limit.",
+    )
+    follow_symlinks: bool = Field(
+        False,
+        description="Follow symbolic links. Disabled by default to prevent root escape.",
+    )
+
+    @field_validator("root_path")
+    @classmethod
+    def validate_root_path(cls, v: str) -> str:
+        """Validate root_path exists, is a directory, and is not a dangerous system path."""
+        import os
+
+        real = os.path.realpath(v.strip())
+        if not os.path.exists(real):
+            raise ValueError(f"Path does not exist: {real}")
+        if not os.path.isdir(real):
+            raise ValueError(f"Path is not a directory: {real}")
+        dangerous = {"/", "/etc", "/proc", "/sys", "/dev", "/boot", "C:\\", "C:\\Windows"}
+        if real in dangerous or any(real.startswith(d + os.sep) for d in dangerous):
+            raise ValueError(f"Path '{real}' is not allowed for security reasons")
+        return real

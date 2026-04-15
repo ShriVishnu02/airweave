@@ -1163,6 +1163,16 @@ class HerbAuthConfig(BaseConfig):
     )
 
 
+# Local Drive
+class LocalDriveAuthConfig(BaseConfig):
+    """Auth config for the Local Drive connector (no real credentials needed)."""
+
+    placeholder: str = Field(
+        "local",
+        description="No credentials required for local filesystem access.",
+    )
+
+
 class EnronAuthConfig(BaseConfig):
     """Placeholder authentication for the Enron email corpus (no real credentials needed)."""
 

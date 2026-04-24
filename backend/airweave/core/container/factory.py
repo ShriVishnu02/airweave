@@ -24,6 +24,7 @@ from airweave.adapters.llm.anthropic import AnthropicLLM
 from airweave.adapters.llm.cerebras import CerebrasLLM
 from airweave.adapters.llm.fallback import FallbackChainLLM
 from airweave.adapters.llm.groq import GroqLLM
+from airweave.adapters.llm.mistral import MistralLLM
 from airweave.adapters.llm.registry import (
     PROVIDER_API_KEY_SETTINGS,
     LLMProvider,
@@ -32,6 +33,7 @@ from airweave.adapters.llm.registry import (
     get_model_spec as get_llm_model_spec,
 )
 from airweave.adapters.llm.together import TogetherLLM
+from airweave.adapters.llm.unavailable import UnavailableLLM
 from airweave.adapters.metrics import (
     PrometheusAgenticSearchMetrics,
     PrometheusDbPoolMetrics,
@@ -1185,18 +1187,25 @@ def _build_llm_chain(
 ):
     """Build LLM fallback chain from SearchConfig, skipping providers without API keys.
 
-    Returns:
-        An LLM instance (single provider or FallbackChainLLM).
-
-    Raises:
-        ValueError: If no LLM providers are available.
+    When no provider in the chain has a configured API key (or all fail to initialize),
+    returns an ``UnavailableLLM`` null-object rather than raising. This keeps the
+    backend bootable for deployers who only use Instant search. Classic and agentic
+    search surface ``LLMUnavailableError`` on first invocation, mapped to HTTP 503.
     """
     provider_classes = {
         LLMProvider.ANTHROPIC: AnthropicLLM,
         LLMProvider.CEREBRAS: CerebrasLLM,
         LLMProvider.GROQ: GroqLLM,
+        LLMProvider.MISTRAL: MistralLLM,
         LLMProvider.TOGETHER: TogetherLLM,
     }
+
+    def _unavailable(reason: str, level: str = "info") -> UnavailableLLM:
+        getattr(logger, level)(
+            f"[SearchFactory] {reason} — classic/agentic search will return HTTP 503 "
+            "until a key is set. Instant search is unaffected."
+        )
+        return UnavailableLLM()
 
     # Collect available (provider, model_spec, class) tuples first,
     # then decide retry strategy based on how many survived.
@@ -1216,10 +1225,7 @@ def _build_llm_chain(
         available.append((provider, model, model_spec, provider_cls))
 
     if not available:
-        raise ValueError(
-            "No LLM providers available for search. "
-            "Configure at least one API key from SearchConfig.LLM_FALLBACK_CHAIN."
-        )
+        return _unavailable("No LLM provider API keys configured")
 
     # Single provider: use default retries.
     # Multiple providers: max_retries=0 for all except the last provider,
@@ -1241,9 +1247,7 @@ def _build_llm_chain(
             )
 
     if not llm_providers:
-        raise ValueError(
-            "No LLM providers available for search. All configured providers failed to initialize."
-        )
+        return _unavailable("All configured LLM providers failed to initialize", level="warning")
 
     if len(llm_providers) == 1:
         return llm_providers[0]
@@ -1275,9 +1279,6 @@ def _create_search_services(
     config = SearchConfig()
 
     # 1. Tokenizer — validate against primary LLM model requirements
-    if not config.LLM_FALLBACK_CHAIN:
-        raise ValueError("LLM_FALLBACK_CHAIN is empty — at least one provider is required")
-
     primary_provider, primary_model = config.LLM_FALLBACK_CHAIN[0]
     primary_llm_spec = get_llm_model_spec(primary_provider, primary_model)
 
